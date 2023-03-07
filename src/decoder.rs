@@ -57,14 +57,9 @@ impl Sub<u8> for WrappedU8 {
 }
 
 #[derive(Debug, Clone)]
-enum SourceColorChannel {
-    RGB,
-    RGBA
-}
-
-#[derive(Debug, Clone)]
 pub enum QOIChunk {
-    Color(Pixel, SourceColorChannel), // Both RGB (with previous pixel's alpha) and RGBA
+    ColorRGB(Pixel),
+    ColorRGBA(Pixel),
     Index(u8), // index is stored as 8 bit value with 6th and 7th unused
     Diff(u8, u8, u8), // dr, dg, db
     Luma { diff_green: u8, drdg: u8, dbdg: u8 },
@@ -72,9 +67,21 @@ pub enum QOIChunk {
 }
 const INVALID_CHUNK: QOIChunk = QOIChunk::Run(255);
 
-const SEEN_ARRAY_SIZE: usize = 64;
+impl QOIChunk {
+    fn get_size(&self) -> usize {
+        match self {
+            QOIChunk::ColorRGB(..)  => 4,
+            QOIChunk::ColorRGBA(..) => 5,
+            QOIChunk::Index(..)     => 1,
+            QOIChunk::Diff(..)      => 1,
+            QOIChunk::Luma { .. }   => 2,
+            QOIChunk::Run(..)       => 1,
+        }
+    } 
+}
 
-pub struct ImageDecoder<R: Read> {
+const SEEN_ARRAY_SIZE: usize = 64;
+pub struct ImageDecoder<R> {
     // The image source
     source: R,
 
@@ -104,8 +111,8 @@ pub struct QOIImage {
     pub pixels: Vec<Pixel>
 }
 
-pub enum ProcessedChunk {
-    Ok(Pixel, QOIChunk),
+pub enum EvaluatedChunk {
+    Ok(Pixel),
     EndMarker,
     Invalid
 }
@@ -142,21 +149,21 @@ impl<R: Read> ImageDecoder<R> {
 
         let chunk: QOIChunk = match tag {
             0xFE => { /* RGB */
-                QOIChunk::Color(Pixel::new(
+                QOIChunk::ColorRGB(Pixel::new(
                     buf[0],
                     buf[1],
                     buf[2],
                     self.prev.a
-                ), SourceColorChannel::RGB)
+                ))
             },
 
             0xFF => { /* RGBA */ 
-                QOIChunk::Color(Pixel::new(
+                QOIChunk::ColorRGBA(Pixel::new(
                     buf[0],
                     buf[1],
                     buf[2],
                     buf[3]
-                ), SourceColorChannel::RGBA)
+                ))
             },
 
             x if tag_2bit(x, 0b00) && self.window[1] != x => { /* INDEX */
@@ -200,7 +207,7 @@ impl<R: Read> ImageDecoder<R> {
     fn transform_chunk(&self, chunk: QOIChunk) -> Pixel {
         // Pixel::zero()
         match chunk {
-            QOIChunk::Color(p, _) => p,
+            QOIChunk::ColorRGB(p) | QOIChunk::ColorRGBA(p) => p,
             QOIChunk::Index(index) => self.seen[index as usize].clone(),
             QOIChunk::Diff(dr, dg, db) => Pixel::new(
                 (WrappedU8(self.prev.r) + dr - 2).into_inner(),
@@ -218,13 +225,11 @@ impl<R: Read> ImageDecoder<R> {
         }
     }
 
-    pub fn next_chunk(&mut self) -> ProcessedChunk {
-
+    pub fn next_chunk(&mut self) -> EvaluatedChunk {
         if self.run_active {
             if self.run_length > 0 {
-                let res = ProcessedChunk::Ok(self.prev.clone(), QOIChunk::Run(self.run_length));
                 self.run_length -= 1;
-                return res;
+                return EvaluatedChunk::Ok(self.prev.clone());
             }
             else {
                 self.run_active = false;
@@ -239,20 +244,11 @@ impl<R: Read> ImageDecoder<R> {
             .expect("Failed to read source");
 
         if &self.window[..] == &QOI_END_MARKER[..] {
-            ProcessedChunk::EndMarker
+            EvaluatedChunk::EndMarker
         } else {
             match self.decode_next_chunk() {
                 Some(mut chunk) => {
-                    let processed = match chunk {
-                        QOIChunk::Color(_, SourceColorChannel::RGB) => 4, 
-                        QOIChunk::Color(_, SourceColorChannel::RGBA) => 5, 
-                        QOIChunk::Index(..) => 1, 
-                        QOIChunk::Diff(..) => 1, 
-                        QOIChunk::Luma { .. } => 2, 
-                        QOIChunk::Run(..) => 1,
-                    };
-
-                    self.window_processed = processed;
+                    self.window_processed = chunk.get_size();
 
                     if let QOIChunk::Run(run_length) = &mut chunk {
                         // Un-bias the run length
@@ -265,46 +261,33 @@ impl<R: Read> ImageDecoder<R> {
                         self.prev = pixel;
                     }
 
-                    ProcessedChunk::Ok(self.prev.clone(), chunk)
+                    EvaluatedChunk::Ok(self.prev.clone())
                 },
-                None => ProcessedChunk::Invalid
+                None => EvaluatedChunk::Invalid
             }   
         }
     }
 
-    pub fn decode(&mut self) {
+    fn parse_header(&mut self) -> QOIHeader {
         let mut header_bytes = [0_u8; 14];
 
         match self.source.read_exact(&mut header_bytes[..]) {
             Ok(_) => {
                 if !Self::verify_magic(&header_bytes[0..4]) {
-                    println!("Not a QOI buffer [magic bytes invalid]");
-                    return;
+                    panic!("Not a QOI buffer [magic bytes invalid]");
                 }
             },
-            Err(error) => { println!("Failed to read magic bytes"); return;; }
+            Err(error) => { panic!("Failed to read magic bytes"); }
         }
 
-        let header = QOIHeader {
+
+        QOIHeader {
             width: be_u32(&header_bytes[4..8]),
             height: be_u32(&header_bytes[8..12]),
             channels: header_bytes[12],
             colorspace: header_bytes[13],
-        };
-
-        println!("\n{:#?}\n", header);
-
-        loop {
-            match self.next_chunk() {
-                ProcessedChunk::Ok(px, _) => {
-                    println!("{:?}; P = {}", px, self.window_processed);
-                },
-                ProcessedChunk::EndMarker => { println!("End Marker"); break },
-                ProcessedChunk::Invalid => { println!("Error next_chunk()"); break },
-            }
         }
     }
-
 }
 
 fn be_u32(bytes: &[u8]) -> u32 {
@@ -314,4 +297,18 @@ fn be_u32(bytes: &[u8]) -> u32 {
 fn tag_2bit(x: u8, tag: u8) -> bool {
     const MASK: u8 = 0b_11_00_00_00_u8;
     (x & MASK) >> 6 == tag
+}
+
+pub struct DecodeChunks<R>(ImageDecoder<R>);
+
+impl<R> Iterator for DecodeChunks<R>
+where
+    R: Read
+{
+    type Item = Pixel;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
+
 }

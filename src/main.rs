@@ -20,7 +20,7 @@ fn main() {
         .expect(format!("Failed to open file: \"{}\"", path).as_str());
 
     let mut dec = ImageDecoder::new(file);
-    let res = dec.decode();
+    // let res = dec.decode();
 
     // println!("Result = {:#?}", res);
 }
