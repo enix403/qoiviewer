@@ -7,7 +7,7 @@ mod decoder;
 use std::fs::{File, OpenOptions};
 use std::io;
 
-use decoder::{ImageDecoder};
+use decoder::{ImageDecoder, EvaluatedChunk};
 
 fn main() {
 
@@ -19,8 +19,15 @@ fn main() {
         .open(path)
         .expect(format!("Failed to open file: \"{}\"", path).as_str());
 
-    let mut dec = ImageDecoder::new(file);
-    // let res = dec.decode();
+    let mut dec = ImageDecoder::new(file).unwrap();
 
-    // println!("Result = {:#?}", res);
+    println!("{:#?}", dec.header());
+
+    for c in dec.chunks_iter() {
+        match c {
+            EvaluatedChunk::Ok(px) => { println!("{:?}", px); },
+            EvaluatedChunk::EndMarker => { println!("End Marker"); break; },
+            _ => { break; }
+        };
+    }
 }
