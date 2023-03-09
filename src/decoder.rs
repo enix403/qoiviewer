@@ -30,6 +30,14 @@ impl Pixel {
         +  (self.b as usize) * 7
         +  (self.a as usize) * 11) % 64usize)
     }
+
+    pub fn to_bytes(&self) -> [u8; 4] {
+        [self.r, self.g, self.b, self.a]
+    }
+
+    pub fn to_rgba32(&self) -> u32 {
+        u32::from_be_bytes([self.r, self.g, self.b, self.a])
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -79,7 +87,7 @@ impl QOIChunk {
             QOIChunk::Luma { .. }   => 2,
             QOIChunk::Run(..)       => 1,
         }
-    } 
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -331,20 +339,22 @@ impl<R> Iterator for DecodeChunks<R>
 where
     R: Read
 {
-    type Item = EvaluatedChunk;
+    type Item = Result<Pixel, String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ended {
-            None
-        } else {
-            let chunk = self.next_chunk();
-            match chunk {
-                EvaluatedChunk::Ok(..) => {},
-                _ => { self.ended = true; }
-            };
-
-            Some(chunk)
+        match self.next_chunk() {
+            EvaluatedChunk::Ok(px) => Some(Ok(px)),
+            EvaluatedChunk::EndMarker => None ,
+            EvaluatedChunk::Faulty(s) => Some(Err(s))
         }
+        // let chunk = self.next_chunk();
+
+        // match chunk {
+            // EvaluatedChunk::Ok(..) => {},
+            // _ => { self.ended = true; }
+        // };
+
+        // Some(chunk)
     }
 }
 

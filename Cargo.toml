@@ -7,4 +7,5 @@ default-run = "qoiviewer"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+image = { version = "0.24.5", features = [ 'png' ] }
 sdl2 = { version = "0.35.2", features = [ 'use-pkgconfig', 'static-link' ] }
