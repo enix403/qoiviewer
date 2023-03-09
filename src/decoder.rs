@@ -31,12 +31,69 @@ impl Pixel {
         +  (self.a as usize) * 11) % 64usize)
     }
 
-    pub fn to_bytes(&self) -> [u8; 4] {
+    pub fn to_channels4(&self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a]
+    }
+
+    pub fn to_channels3(&self) -> [u8; 3] {
+        [self.r, self.g, self.b]
+    }
+
+    pub fn to_channels4_iter(self) -> PixelChannelIterator {
+        PixelChannelIterator { px: self, channels: 4, counter: 0 }
+    }
+
+    pub fn to_channels3_iter(self) -> PixelChannelIterator {
+        PixelChannelIterator { px: self, channels: 3, counter: 0 }
     }
 
     pub fn to_rgba32(&self) -> u32 {
         u32::from_be_bytes([self.r, self.g, self.b, self.a])
+    }
+}
+
+pub struct PixelChannelIterator {
+    px: Pixel,
+    channels: u8,
+    counter: u8
+}
+
+impl Iterator for PixelChannelIterator {
+    type Item = u8;
+    fn next(&mut self) -> Option<Self::Item> {
+
+        let val = match (self.channels, self.counter) {
+            (3, 0) => Some(self.px.r),
+            (3, 1) => Some(self.px.g),
+            (3, 2) => Some(self.px.b),
+
+            (4, 0) => Some(self.px.r),
+            (4, 1) => Some(self.px.g),
+            (4, 2) => Some(self.px.b),
+            (4, 3) => Some(self.px.a),
+            _ => None
+        };
+
+        // let val = if self.channels == 3 {
+        //     match self.counter {
+        //         0 => Some(self.px.r),
+        //         1 => Some(self.px.g),
+        //         2 => Some(self.px.b),
+        //         _ => None
+        //     }
+        // } else if self.channels == 4 {
+        //     match self.counter {
+        //         0 => Some(self.px.r),
+        //         1 => Some(self.px.g),
+        //         2 => Some(self.px.b),
+        //         3 => Some(self.px.a),
+        //         _ => None
+        //     }
+        // };
+
+        self.counter += 1;
+
+        val
     }
 }
 
@@ -231,9 +288,9 @@ where
             /* QOI_OP_DIFF */
             x if tag_2bit(x, 0b01) => {
                 QOIChunk::Diff(
-                    (tag >> 4) & 0x03,
-                    (tag >> 2) & 0x03,
-                    (tag >> 0) & 0x03
+                    ((tag >> 4) & 0x03).wrapping_sub(2),
+                    ((tag >> 2) & 0x03).wrapping_sub(2),
+                    ((tag     ) & 0x03).wrapping_sub(2)
                 )
             },
 
@@ -242,9 +299,9 @@ where
                 let diffs = buf[0];
 
                 QOIChunk::Luma { 
-                    diff_green: tag & 0x3F,
-                    drdg: (diffs >> 4) & 0x0F,
-                    dbdg: (diffs >> 0) & 0x0F,
+                    diff_green: (tag & 0x3F).wrapping_sub(32),   // Unbias by 32
+                    drdg: ((diffs >> 4) & 0x0F).wrapping_sub(8), // Unbias by 8
+                    dbdg: ((diffs     ) & 0x0F).wrapping_sub(8), // Unbias by 8
                 }
             },
 
@@ -271,15 +328,15 @@ where
             QOIChunk::Index(index) => self.seen[index as usize].clone(),
             QOIChunk::Diff(dr, dg, db) => Pixel::new(
                 // Unbiasing
-                (WrappedU8(self.prev.r) + dr - 2).into_inner(),
-                (WrappedU8(self.prev.g) + dg - 2).into_inner(),
-                (WrappedU8(self.prev.b) + db - 2).into_inner(),
+                (WrappedU8(self.prev.r) + dr).into_inner(),
+                (WrappedU8(self.prev.g) + dg).into_inner(),
+                (WrappedU8(self.prev.b) + db).into_inner(),
                 self.prev.a
             ),
             QOIChunk::Luma { diff_green, drdg, dbdg } => Pixel::new(
-                (WrappedU8(self.prev.r) + diff_green + drdg - 8).into_inner(),
-                (WrappedU8(self.prev.g) + diff_green + 32).into_inner(),
-                (WrappedU8(self.prev.b) + diff_green + drdg - 8).into_inner(),
+                (WrappedU8(self.prev.r) + diff_green + drdg).into_inner(),
+                (WrappedU8(self.prev.g) + diff_green).into_inner(),
+                (WrappedU8(self.prev.b) + diff_green + dbdg).into_inner(),
                 self.prev.a
             ),
 
