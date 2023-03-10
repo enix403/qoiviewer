@@ -1,6 +1,5 @@
-use std::io::{Read, ErrorKind};
+use std::io::Read;
 use std::ops::{Add, Sub};
-use std::cell::RefCell;
 
 type U8Array<const N: usize> = [u8; N];
 type EndMarker = U8Array<8>;
@@ -25,18 +24,10 @@ impl Pixel {
     }
 
     fn hash_index(&self) -> usize {
-        (( (self.r as usize) * 3
+        ( (self.r as usize) * 3
         +  (self.g as usize) * 5
         +  (self.b as usize) * 7
-        +  (self.a as usize) * 11) % 64usize)
-    }
-
-    pub fn to_channels4(&self) -> [u8; 4] {
-        [self.r, self.g, self.b, self.a]
-    }
-
-    pub fn to_channels3(&self) -> [u8; 3] {
-        [self.r, self.g, self.b]
+        +  (self.a as usize) * 11) % 64usize
     }
 
     pub fn to_channels4_iter(self) -> PixelChannelIterator {
@@ -47,6 +38,7 @@ impl Pixel {
         PixelChannelIterator { px: self, channels: 3, counter: 0 }
     }
 
+    #[allow(unused)]
     pub fn to_rgba32(&self) -> u32 {
         u32::from_be_bytes([self.r, self.g, self.b, self.a])
     }
@@ -73,23 +65,6 @@ impl Iterator for PixelChannelIterator {
             (4, 3) => Some(self.px.a),
             _ => None
         };
-
-        // let val = if self.channels == 3 {
-        //     match self.counter {
-        //         0 => Some(self.px.r),
-        //         1 => Some(self.px.g),
-        //         2 => Some(self.px.b),
-        //         _ => None
-        //     }
-        // } else if self.channels == 4 {
-        //     match self.counter {
-        //         0 => Some(self.px.r),
-        //         1 => Some(self.px.g),
-        //         2 => Some(self.px.b),
-        //         3 => Some(self.px.a),
-        //         _ => None
-        //     }
-        // };
 
         self.counter += 1;
 
@@ -217,7 +192,6 @@ const SEEN_ARRAY_SIZE: usize = 64;
 
 pub struct DecodeChunks<R> {
     decoder: ImageDecoder<R>,
-    ended: bool,
 
     prev: Pixel, // Previous pixel
     seen: [Pixel; SEEN_ARRAY_SIZE], // The QOI array of pixels 
@@ -236,7 +210,6 @@ where
     fn new(decoder: ImageDecoder<R>) -> Self {
         Self {
             decoder: decoder,
-            ended: false,
 
             seen: [Pixel::zero(); SEEN_ARRAY_SIZE],
             prev: Pixel::new(0, 0, 0, 255),
@@ -401,17 +374,9 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_chunk() {
             EvaluatedChunk::Ok(px) => Some(Ok(px)),
-            EvaluatedChunk::EndMarker => None ,
+            EvaluatedChunk::EndMarker => None,
             EvaluatedChunk::Faulty(s) => Some(Err(s))
         }
-        // let chunk = self.next_chunk();
-
-        // match chunk {
-            // EvaluatedChunk::Ok(..) => {},
-            // _ => { self.ended = true; }
-        // };
-
-        // Some(chunk)
     }
 }
 

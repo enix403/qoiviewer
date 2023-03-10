@@ -1,11 +1,9 @@
-#![allow(unreachable_code)]
-#![allow(unused)]
-#![allow(dead_code)]
+// #![allow(unreachable_code)]
+// #![allow(unused)]
+// #![allow(dead_code)]
 
 use std::time::Duration;
-use std::mem;
-use std::fs::{File, OpenOptions};
-use std::io;
+use std::fs::OpenOptions;
 
 extern crate sdl2;
 
@@ -13,15 +11,12 @@ use sdl2::Sdl;
 use sdl2::pixels::{PixelFormatEnum, Color};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::rect::Rect;
 use sdl2::video::Window;
 use sdl2::render::{Texture, TextureCreator, TextureAccess};
 
-use image::{ImageBuffer, RgbaImage, RgbImage};
-
 mod decoder;
 
-use decoder::{Pixel, ImageDecoder, QOIHeader, EvaluatedChunk};
+use decoder::{ImageDecoder, QOIHeader};
 
 fn create_window(sdl: &Sdl) -> Window {
     let video_subsystem = sdl.video().unwrap();
@@ -34,61 +29,15 @@ fn create_window(sdl: &Sdl) -> Window {
         .unwrap()
 }
 
-/*
-fn main() {
-    let path = "qoi_test_images/kodim10.qoi";
-
-    let file = OpenOptions::new()
-        .read(true)
-        .open(path)
-        .expect(format!("Failed to open file: \"{}\"", path).as_str());
-
-    let mut dec = ImageDecoder::new(file).unwrap();
-
-    let &QOIHeader { width, height, .. } = dec.header();
-
-    println!("w = {}, h = {}", width, height);
-
-    let pixels = dec
-        .chunks_iter()
-        .map(Result::unwrap)
-        // .take(5)
-        // .inspect(|px| println!("{:?}", px))
-        // .flat_map(|p| p.to_bytes())
-        .collect::<Vec<_>>();
-
-    // let mut img = image::ImageBuffer::<image::Rgba<u8>>::new(width, height);
-    let mut img = RgbImage::new(width, height);
-
-    // let width = width as usize;
-    // let height = height as usize;
-
-    for y in 0..height {
-        for x in 0..width {
-            let px = img.get_pixel_mut(x, y);
-            let src = pixels[(width * y + x) as usize];
-            px.0 = [src.r, src.g, src.b];
-        }
-    }
-
-    // img.save("output-p3.png");
-}
-*/
-
-
 fn gen_texture<'a, T: 'a>(crt: &'a TextureCreator<T>) -> Texture<'a> {
-    // let path = "qoi_test_images/edgecase.qoi";
-    // let path = "qoi_test_images/qoi_logo.qoi";
-    // let path = "qoi_test_images/kodim10.qoi";
-    // let path = "qoi_test_images/kodim23.qoi";
-    let path = "qoi_test_images/testcard.qoi";
+    let path = "qoi_test_images/kodim23.qoi";
 
     let file = OpenOptions::new()
         .read(true)
         .open(path)
         .expect(format!("Failed to open file: \"{}\"", path).as_str());
 
-    let mut dec = ImageDecoder::new(file).unwrap();
+    let dec = ImageDecoder::new(file).unwrap();
 
     let &QOIHeader { width, height, channels, .. } = dec.header();
 
@@ -149,11 +98,10 @@ pub fn main() {
             }
         }
 
-        canvas.copy(&texture, None, None);
+        canvas.copy(&texture, None, None).unwrap();
 
         canvas.present();
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
-
 }
 
